@@ -181,7 +181,7 @@ cdef _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem,
             phase_idx += 1
     return result
 
-def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, state_variables, verbose,
+def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, state_variables, global_min, verbose,
                             problem=Problem, solver=None):
     """
     Compute equilibrium for the given conditions.
@@ -201,6 +201,8 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
         Sample of energy landscape of the system.
     conds_keys : list of str
         List of conditions axes in dimension order.
+    global_min : bool
+        Automatic miscibility gap detection.
     verbose : bool
         Print details.
     problem : pycalphad.core.problem.Problem
@@ -250,7 +252,7 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
     prop_X_values = properties.X
     prop_Y_values = properties.Y
     prop_GM_values = properties.GM
-    str_state_variables = [str(k) for k in state_variables if str(k) in grid.coords.keys()]
+    str_state_variables = [str(k) for k in state_variables if str(k) in conds_keys]
     it = np.nditer(prop_GM_values, flags=['multi_index'])
 
     while not it.finished:
@@ -293,8 +295,9 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
             composition_sets.append(compset)
         chemical_potentials = prop_MU_values[it.multi_index]
         energy = prop_GM_values[it.multi_index]
-        # Remove duplicate phases -- we will add them back later
-        remove_degenerate_phases(composition_sets, [], 0.5, 100, verbose)
+        if global_min:
+            # Remove duplicate phases -- we will add them back later
+            remove_degenerate_phases(composition_sets, [], 0.5, 100, verbose)
         iterations = 0
         history = []
         while (iterations < 10) and (not iter_solver.ignore_convergence):
@@ -302,6 +305,8 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
 
             if result.converged:
                 chemical_potentials[:] = result.chemical_potentials
+            if not global_min:
+                break
             changed_phases = add_new_phases(composition_sets, removed_compsets, phase_records,
                                             grid, curr_idx, chemical_potentials, state_variable_values,
                                             1e-4, verbose)
